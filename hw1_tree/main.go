@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	_ "fmt"
 	"io"
-	_ "log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -41,14 +39,6 @@ func dirTree(out io.Writer, startPath string, printFiles bool) (err error) {
 	})
 
 	printTree(out, rootFolder.Folders[startPath], "", printFiles)
-
-	//for name, folder := range rootFolder.Folders {
-	//	fmt.Println(name, folder)
-	//}
-
-	//fmt.Println(rootFolder.Folders[startPath].Folders["zline"].Folders["lorem"].Files)
-
-	//printFolders(rootFolder.Folders[startPath], "")
 
 	return err
 }
@@ -89,44 +79,8 @@ func printTree(out io.Writer, f *FSNode, prefix string, printFiles bool) {
 		if node.IsDir {
 			printTree(out, f.Folders[node.Name], subPrefix, printFiles)
 		}
-
-		//subPrefix := fmt.Sprintf("%v\t├───", subPrefix)
-		//printTree(f.Folders[name], subPrefix)
-
-		//subPrefix := strings.Replace(prefix, "├───", "│", -1)
-		//subPrefix = fmt.Sprintf("%v\t├───", subPrefix)
-		//
-		//if i == len(fl)-1 {
-		//	subPrefix = strings.Replace(subPrefix, "├───", "└───", -1)
-		//	subPrefix = strings.Replace(subPrefix, "│", "", -1)
-		//}
-
-		//printTree(f.Folders[name], subPrefix)
-
-		//if i == len(fl)-1 {
-		//	prefix =strings.Replace(prefix, "├───", "└───", -1)
-		//}
-		//fmt.Printf("%v%v\n", prefix, name)
-		//
-		//subPrefix := prefix
-		////subPrefix :=strings.Replace(prefix, "├───", "│", 1)
-		//if i != len(fl)-1 {
-		//	subPrefix =strings.Replace(subPrefix, "├───", "│", -1)
-		//	subPrefix += "\t├───"
-		//} else {
-		//	//subPrefix =strings.Replace(subPrefix, "├───", "\t", -1)
-		//	subPrefix += "\t└───"
-		//}
-		//fmt.Printf("%v%v\n", subPrefix, name)
-		//
-		//printTree(f.Folders[name], subPrefix)
 	}
 }
-
-//type File struct {
-//	Name string
-//	Size int64
-//}
 
 type FSNode struct {
 	Name    string
@@ -171,28 +125,3 @@ func getFolder(f *FSNode, path []string) *FSNode {
 
 	return folderSearch
 }
-
-//func printFolders(f *FSNode, path string) {
-//	if len(f.Folders) > 0 {
-//		for name, folder := range f.Folders {
-//			newPath := path
-//			newPath += fmt.Sprintf("%v/", name)
-//			printFolders(folder, newPath)
-//		}
-//	} else {
-//		fmt.Printf("%v\n", path)
-//	}
-//}
-
-//func printFolders(f *Folder) string {
-//	var str string
-//	if len(f.Folders) > 0 {
-//		for name, folder := range f.Folders {
-//			str += fmt.Sprintf("%v/", name)
-//			str += printFolders(folder)
-//		}
-//	} else {
-//		str = "\n"
-//	}
-//	return str
-//}
