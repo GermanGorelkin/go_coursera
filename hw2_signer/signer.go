@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	_ "strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 var wg *sync.WaitGroup
@@ -20,31 +18,26 @@ func ExecutePipeline(jobs ...job) {
 	wg = &sync.WaitGroup{}
 	mu = &sync.Mutex{}
 
-	fmt.Println("start ExecutePipeline")
+	fmt.Println("start ExecutePipeline", len(jobs))
 
 	for i, j := range jobs {
 		fmt.Printf("start %v\n", i)
 		wg.Add(1)
-		go j(in, out)
+
+		go func(f func(in, out chan interface{}), wg *sync.WaitGroup, in, out chan interface{}) {
+			f(in, out)
+			wg.Done()
+		}(j, wg, in, out)
 
 		in = out
 		out = make(chan interface{}, 100)
-
-		//in, out = out, in
-
-		//switch v := (<-out).(type) {
-		//case int:
-		//	in <- strconv.Itoa(v)
-		//case string:
-		//	in <- v
-		//}
 	}
 
-	wg.Done()
-	wg.Done()
-	wg.Wait()
+	if len(jobs) == 2 {
+		wg.Done()
+	}
 
-	time.Sleep(10 * time.Millisecond)
+	wg.Wait()
 }
 
 func SingleHash(in, out chan interface{}) {
@@ -99,17 +92,15 @@ func SingleHash(in, out chan interface{}) {
 		wgSH.Wait()
 		fmt.Println("SingleHash close")
 		close(out)
-
-		wg.Done()
 	}()
 }
 
 func MultiHash(in, out chan interface{}) {
-	go func() {
+	go func(in chan interface{}) {
 		wgMHInner := &sync.WaitGroup{}
 		for v := range in {
 			wgMHInner.Add(1)
-			go func() {
+			go func(v interface{}, wgMHInner *sync.WaitGroup) {
 				wgMH := &sync.WaitGroup{}
 				dataRaw := v
 				data := dataRaw.(string)
@@ -117,9 +108,6 @@ func MultiHash(in, out chan interface{}) {
 				var result string
 				results := make([]string, 6, 6)
 				for i := 0; i < 6; i++ {
-					//crc32Result := DataSignerCrc32(string(v) + data)
-					//fmt.Printf("%v MultiHash: crc32(th+step1)) %v %v\n", data, string(v), crc32Result)
-					//result += crc32Result
 					wgMH.Add(1)
 					go func(i int) {
 						th := strconv.Itoa(i)
@@ -130,23 +118,19 @@ func MultiHash(in, out chan interface{}) {
 						wgMH.Done()
 					}(i)
 				}
-				//4108050209~502633748 MultiHash: crc32(th+step1)) 0 2956866606
-				//4108050209~502633748 MultiHash: crc32(th+step1)) 0 1813119770
 				wgMH.Wait()
 				result = strings.Join(results, "")
 				fmt.Printf("%v MultiHash result %v\n", data, result)
 
 				out <- string(result)
 				wgMHInner.Done()
-			}()
+			}(v, wgMHInner)
 		}
 
 		wgMHInner.Wait()
 		fmt.Println("MultiHash close")
 		close(out)
-
-		wg.Done()
-	}()
+	}(in)
 }
 
 func CombineResults(in, out chan interface{}) {
@@ -168,7 +152,5 @@ func CombineResults(in, out chan interface{}) {
 
 		out <- strings.Join(result, "_")
 		close(out)
-
-		wg.Done()
 	}()
 }
