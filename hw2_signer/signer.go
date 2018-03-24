@@ -2,155 +2,111 @@ package main
 
 import (
 	"fmt"
-	"sort"
+	"sync"
 	"strconv"
 	"strings"
-	"sync"
+	"sort"
 )
 
-var wg *sync.WaitGroup
-var mu *sync.Mutex
-
 func ExecutePipeline(jobs ...job) {
-	in := make(chan interface{}, 100)
-	out := make(chan interface{}, 100)
-
-	wg = &sync.WaitGroup{}
-	mu = &sync.Mutex{}
-
-	fmt.Println("start ExecutePipeline", len(jobs))
-
-	for i, j := range jobs {
-		fmt.Printf("start %v\n", i)
+	wg := &sync.WaitGroup{}
+	var in chan interface{}
+	for _, val := range jobs {
+		out := make(chan interface{}, 100)
 		wg.Add(1)
-
-		go func(f func(in, out chan interface{}), wg *sync.WaitGroup, in, out chan interface{}) {
+		go func(f job, out chan interface{}, in chan interface{}) {
 			f(in, out)
+			close(out)
 			wg.Done()
-		}(j, wg, in, out)
-
+		}(val, out, in)
 		in = out
-		out = make(chan interface{}, 100)
 	}
-
-	if len(jobs) == 2 {
-		wg.Done()
-	}
-
 	wg.Wait()
 }
 
 func SingleHash(in, out chan interface{}) {
-	go func() {
-		wgSH := &sync.WaitGroup{}
+	mu := &sync.Mutex{}
+	wgoutr := &sync.WaitGroup{}
+	for num := range in {
+		data := strconv.Itoa(num.(int))
 
-	LOOP:
-		for {
-			select {
-			case v := <-in:
-				wgSH.Add(1)
-				go func() {
-					dataRaw := (v).(int)
-					data := strconv.Itoa(dataRaw)
-					fmt.Printf("%v SingleHash data %[1]v\n", data)
+		wgoutr.Add(1)
+		go func(data string) {
+			wg := &sync.WaitGroup{}
+			var md5result string
+			var crc32md5result string
+			var crc32result string
+			fmt.Printf("%s SingleHash data %[1]s\n", data)
 
-					var md5Result string
-					var crc32md5Result string
-					var crc32Result string
-					quotaCh := make(chan struct{})
+			wg.Add(1)
+			go func() {
+				mu.Lock()
+				md5result = DataSignerMd5(data)
+				fmt.Printf("%s SingleHash md5(data) %s\n", data, md5result)
+				mu.Unlock()
+				crc32md5result = DataSignerCrc32(md5result)
+				fmt.Printf("%s SingleHash crc32(md5(data)) %s\n", data, crc32md5result)
+				wg.Done()
+			}()
 
-					mu.Lock()
-					md5Result = DataSignerMd5(data)
-					fmt.Printf("%v SingleHash md5(data) %v\n", data, md5Result)
-					mu.Unlock()
+			wg.Add(1)
+			go func() {
+				crc32result = DataSignerCrc32(data)
+				fmt.Printf("%s SingleHash crc32(data) %s\n", data, crc32result)
+				wg.Done()
+			}()
 
-					go func() {
-						crc32md5Result = DataSignerCrc32(md5Result)
-						fmt.Printf("%v SingleHash crc32(md5(data)) %v\n", data, crc32md5Result)
-						quotaCh <- struct{}{}
-					}()
-					go func() {
-						crc32Result = DataSignerCrc32(data)
-						fmt.Printf("%v SingleHash crc32(data) %v\n", data, crc32Result)
-						quotaCh <- struct{}{}
-					}()
+			wg.Wait()
+			result := crc32result + "~" + crc32md5result
+			fmt.Printf("%s SingleHash result %s\n", data, result)
 
-					<-quotaCh
-					<-quotaCh
-					result := crc32Result + "~" + crc32md5Result
+			out <- result
+			wgoutr.Done()
+		}(data)
+	}
 
-					fmt.Printf("%v SingleHash result %v\n", data, result)
-
-					out <- result
-					wgSH.Done()
-				}()
-			default:
-				break LOOP
-			}
-		}
-
-		wgSH.Wait()
-		fmt.Println("SingleHash close")
-		close(out)
-	}()
+	wgoutr.Wait()
 }
 
 func MultiHash(in, out chan interface{}) {
-	go func(in chan interface{}) {
-		wgMHInner := &sync.WaitGroup{}
-		for v := range in {
-			wgMHInner.Add(1)
-			go func(v interface{}, wgMHInner *sync.WaitGroup) {
-				wgMH := &sync.WaitGroup{}
-				dataRaw := v
-				data := dataRaw.(string)
+	wgoutr := &sync.WaitGroup{}
+	for indata := range in {
 
-				var result string
-				results := make([]string, 6, 6)
-				for i := 0; i < 6; i++ {
-					wgMH.Add(1)
-					go func(i int) {
-						th := strconv.Itoa(i)
-						crc32Result := DataSignerCrc32(string(th) + data)
-						fmt.Printf("%v MultiHash: crc32(th+step1)) %v %v\n", data, th, crc32Result)
-						results[i] = crc32Result
-						//result += crc32Result
-						wgMH.Done()
-					}(i)
-				}
-				wgMH.Wait()
-				result = strings.Join(results, "")
-				fmt.Printf("%v MultiHash result %v\n", data, result)
-
-				out <- string(result)
-				wgMHInner.Done()
-			}(v, wgMHInner)
-		}
-
-		wgMHInner.Wait()
-		fmt.Println("MultiHash close")
-		close(out)
-	}(in)
+		wgoutr.Add(1)
+		go func() {
+			wg := &sync.WaitGroup{}
+			data := indata.(string)
+			fmt.Printf("MultiHash data %s\n", data)
+			var arr [6]string
+			for i := 0; i < 6; i++ {
+				par := strconv.Itoa(i) + data
+				wg.Add(1)
+				go func(par string, ind int) {
+					iresult := DataSignerCrc32(par)
+					fmt.Printf("%s MultiHash: crc32(th+step1)) %d %s\n", data, ind, iresult)
+					arr[ind] = iresult
+					wg.Done()
+				}(par, i)
+			}
+			wg.Wait()
+			result := strings.Join(arr[:], "")
+			out <- result
+			wgoutr.Done()
+		}()
+	}
+	wgoutr.Wait()
 }
 
 func CombineResults(in, out chan interface{}) {
-	go func() {
-		var result []string
-		for v := range in {
-			dataRaw := v
-			data := dataRaw.(string)
+	var sl []string
+	for data := range in {
+		sl = append(sl, data.(string))
+	}
+	sort.Slice(sl, func(i, j int) bool {
+		return sl[i] < sl[j]
+	})
+	result := strings.Join(sl, "_")
+	fmt.Printf("CombineFinishResults  %v\n", result)
 
-			fmt.Printf("CombineResults  %v\n", data)
-			result = append(result, data)
-		}
-
-		sort.Slice(result, func(i, j int) bool {
-			return result[i] < result[j]
-		})
-
-		fmt.Printf("CombineFinishResults  %v\n", strings.Join(result, "_"))
-
-		out <- strings.Join(result, "_")
-		close(out)
-	}()
+	out <- result
 }
